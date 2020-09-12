@@ -210,6 +210,7 @@ public class CallNode extends Node {
           add_def( nnn.fld(i));
         set_mem(((MrgProjNode)mem).mem(),gvn);
         _unpacked = true;     // Only do it once
+        gvn.revalive(this);
         return this;
       }
     }

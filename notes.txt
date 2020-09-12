@@ -1,4 +1,56 @@
 =======================================
+Notes from 09/10/2020
+
+Thunks as an easier FunNode.  Single caller, ever, known after Parse.expr(); no args, no display.
+THUNK node - takes from Start, produces [CProj,MProj].
+THRET node - takes ctrl,mem,val.  Produces same.
+THALL node - takes ctrl,mem,THRET.  Inlines in-place.  Can be nested inside a THUNK.
+
+Example: a && b || c && d
+All letters are calls & have side-effects.
+After gather, with THUNKs (upper-case) for all:
+  - && || &&
+  A  B  C  D
+First op: A && B
+  THUNK
+    THALL A --> a
+    CALL && with B 
+  THRET
+Next op: C && D
+  THUNK
+    THALL C --> c
+    CALL && with D
+  THRET
+Next op: ||
+  THUNK
+    THALL (A && B)  --> a; Call && with B
+    CALL || with (C&&D)
+  THRET
+THALL || -->
+-->
+a;
+Call && with B
+Call || with (C&&D)
+-->
+a;
+rez = !a ? a : THALL B --> b;
+Call || with (C&&D)
+-->
+a;
+rez1 = !a ? a : b;
+rez2 = rez1 ? rez1 : THALL (C&&D)
+-->
+a;
+rez1 = !a ? a : b;
+rez2 = rez1 ? rez1 : (THALL C; CALL && with D)
+-->
+a;
+rez1 = !a ? a : b;
+rez2 = rez1 ? rez1 : (c; rez3 = !c ? c : d)
+
+
+
+=======================================
 Notes from 09/07/2020
 
 Short-circuit evals.

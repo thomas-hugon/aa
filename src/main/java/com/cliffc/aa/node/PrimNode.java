@@ -486,12 +486,11 @@ public abstract class PrimNode extends Node {
       Node iff = gvn.xform(new IfNode(ctl,lhs));
       Node fal = gvn.xform(new CProjNode(iff,0));
       Node tru = gvn.xform(new CProjNode(iff,1));
-      // Call on false branch
-      Node cal = gvn.xform(new CallNode(true,_badargs,tru,mem,rhs));
-      Node cep = gvn.xform(new CallEpiNode(cal,Env.DEFMEM));
-      Node ccc = gvn.xform(new CProjNode(cep,0));
-      Node memc= gvn.xform(new MProjNode(cep,1));
-      Node rez = gvn.xform(new  ProjNode(2,cep));
+      // Unthunk (call) on true branch
+      Node tal = gvn.xform(new ThallNode(tru,mem,rhs));
+      Node ccc = gvn.xform(new CProjNode(tal,0));
+      Node memc= gvn.xform(new MProjNode(tal,1));
+      Node rez = gvn.xform(new  ProjNode(2,tal));
       // Region merging results
       Node reg = gvn.init (new RegionNode(null,fal,ccc));
       Node phi = gvn.xform(new PhiNode(Type.SCALAR,null,reg,lhs,rez ));

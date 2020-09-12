@@ -118,8 +118,10 @@ public class LoadNode extends Node {
           mem = ((MemSplitNode)mem0).mem();
         } else if( mem0 instanceof CallNode ) { // Lifting out of a Call
           mem = ((CallNode)mem0).mem();
+        } else if( mem0 instanceof ThunkNode ) { // Mid-parse
+          return null;
         } else {
-          throw com.cliffc.aa.AA.unimpl(); // decide cannot be equal, and advance, or maybe-equal andreturn null
+          throw com.cliffc.aa.AA.unimpl(); // decide cannot be equal and advance, or maybe-equal and return null
         }
       } else if( mem instanceof MrgProjNode ) {
         MrgProjNode mrg = (MrgProjNode)mem;

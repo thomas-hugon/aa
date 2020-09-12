@@ -437,37 +437,84 @@ public class Parse implements Comparable<Parse> {
   // To help order by precedence.  Example: 1+2*3+4*5:
   //  op  : _ + * + *
   //  term: 1 2 3 4 5
-  // Picking ops by precedence:
-  //  op  : _   +   + *
-  //  term: 1 (2*3) 4 5
-  //  op  : _   +     +
-  //  term: 1 (2*3) (4*5)
-  //  op  : _         +
-  //  term: 1+(2*3) (4*5)
-  //  op  : _
-  //  term: 1+(2*3)+(4*5)
   private static class Expr {
     Node _op;                   // Either a FunPtr or an Unresolved
     Node _term;                 // The term, possibly thunked
-    boolean _thunked;           // True if term is thunked
     Parse _op_loc;              // Location of operand start
     Parse _term_loc;            // Location of term start
-    FunPtrNode _ptr;            // Sample FunPtr; same name, op_prec, thunking for all
-    String _name;               // Sample name
-    byte _op_prec;              // Precedence
-    Expr(Node op, Node term, boolean thunked, Parse op_loc, Parse term_loc) {
+    FunNode _fun;               // Sample Fun; same name, op_prec, thunking for all
+
+    Expr(Node op, Node term, Parse op_loc, Parse term_loc) {
       _op=op;
       _term=term;
-      _thunked=thunked;
       _op_loc  =  op_loc;
       _term_loc=term_loc;
-      if( op != null ) {
-        _ptr = (FunPtrNode)(op instanceof UnresolvedNode ? op.in(0) : op);
-        _name = _ptr.fun()._name;
-        _thunked = thunked || _ptr.fun()._thunk_rhs;
-        _op_prec = _ptr.fun()._op_prec;
+      if( op != null )
+        _fun = ((FunPtrNode)(op instanceof UnresolvedNode ? op.in(0) : op)).fun();
+    }
+    Expr _lhs,_root,_rhs;       // left,self,right; tree
+    Expr( Expr ex ) {
+      _term    = ex._term    ;
+      _term_loc= ex._term_loc;
+      ex._term = null;
+    }
+
+    // Simple recursive-descent grammar-like.  Recurses once for each grammar
+    // depth, which is just the operator precedence, fun._op_prec.
+    //static int IDX;             // Grammar cursor
+    //static Expr make_expr_tree(Ary<Expr> exs, Expr lhs) {
+    //  assert (lhs._lhs == null) == (lhs._rhs == null); // Both set or both clear
+    //  while( true ) {
+    //    Expr rhs = exs.at(IDX++);  Expr binop=rhs;
+    //    Expr nxt = exs.atX(IDX);
+    //    if( IDX <  exs._len && binop._fun._op_prec < nxt._fun._op_prec )
+    //      rhs = make_expr_tree(exs,rhs);
+    //    lhs = new Expr(lhs,binop,rhs);
+    //    if( IDX >= exs._len || binop._fun._op_prec > nxt._fun._op_prec )
+    //      return lhs;
+    //  }
+    //}
+
+    void emit(Parse P) {
+      assert (_lhs == null) == (_rhs == null); // Both set or both clear
+      // Leaf?
+      if( _lhs==null ) {
+        if( _term instanceof ThretNode )
+          _term = P._dethunk((ThretNode)_term);
+      } else {
+        _lhs.emit(P);           // De-thunk LHS
+        if( _fun._thunk_rhs )
+          throw com.cliffc.aa.AA.unimpl(); // De-thunk
+        else
+          _rhs.emit(P);         // De-thunk RHS
+        P._call_binop(_lhs,this,_rhs);
       }
     }
+  }
+
+  private void _call_binop(Expr lhs, Expr op, Expr rhs) {
+    Parse[] bads = new Parse[]{op._op_loc,lhs._term_loc,rhs._term_loc};
+    CallNode call = (CallNode)gvn(new CallNode(true,bads,ctrl(),mem(),op._op.unhook(),lhs._term.unhook(),rhs._term.unhook()));
+    Node cepi =               gvn(new CallEpiNode(call,Env.DEFMEM));
+    set_ctrl(gvn(new CProjNode(cepi,0)));
+    set_mem (gvn(new MProjNode(cepi,1)));
+    op._term=gvn(new  ProjNode(2,cepi)).keep();
+  }
+
+  // Inline this thunk right-here-right-now, and remove the thunk wrappers.
+  private Node _dethunk(ThretNode trt) {
+    ThunkNode thk = trt.thunk();
+    thk.inline(_gvn,ctrl(),mem());
+    set_ctrl(trt.ctrl());
+    set_mem (trt.mem ());
+    Node rez=trt.rez().keep();
+    assert !(rez instanceof ThretNode);
+    // Super aggressively remove thunks during parsing.
+    // None should survive expr().
+    trt.unkeep(_gvn);
+    while( !thk.is_dead() )     // Each use is_copy, and folds immediately.
+      _gvn.xform_old(thk._uses.at(0),0);
+    return rez;
   }
 
   /** Parse an expression, a list of terms and infix operators.  The whole list
@@ -484,15 +531,15 @@ public class Parse implements Comparable<Parse> {
     // precedence and combine pairwise into a tree.  The short-circuit
     // operators require 'thunking' the Right Hand Side, to delay execution.
     // In general, user ops can thunk RHSs, so right here right now we thunk
-    // all terms past any RHS-thunk operator.  During pair-wise combining we
-    // thunk or de-thunk as needed.
+    // all terms.  During pair-wise combining we thunk or de-thunk as needed.
+    Node old_ctrl = ctrl().keep();
+    Node old_mem  = mem ().keep();
 
     // Collect ops and terms.  First term, no binop yet.
     Ary<Expr> exs = new Ary<>(new Expr[1],0);
-    exs.push(new Expr(null,term.keep(),false,null,errMsg(oldx)));
+    exs.push(new Expr(null,term.keep(),null,errMsg(oldx)));
 
     // Now loop for binop/term pairs: parse Kleene star of [binop term]
-    boolean thunking = false;
     while( true ) {
       skipWS();                 // Skip between end of last term and start of token
       oldx = _x;
@@ -500,47 +547,101 @@ public class Parse implements Comparable<Parse> {
       if( bin==null ) break;    // Valid parse, but no more Kleene star
       Node binfun = _e.lookup_filter(bin.intern(),_gvn,2); // BinOp, or null
       if( binfun==null ) { _x=oldx; break; } // Not a binop, no more Kleene star
-      Expr ex = exs.push(new Expr(binfun.keep(),null,thunking,errMsg(oldx),null));
+      Expr ex = exs.push(new Expr(binfun.keep(),null,errMsg(oldx),null));
       // Token might have been longer than the filtered name; happens if a
       // bunch of operator characters are adjacent but we can make an operator
       // out of the first few.
-      _x = oldx+ex._name.length();
-      // Started thunking?
-      thunking = ex._thunked;
-      skipWS();                 // Skip WS after token
-      ex._term_loc = errMsg(_x);// Location of term start
+      _x = oldx+ex._fun._name.length();
+      skipWS();                  // Skip WS after token
+      ex._term_loc = errMsg(_x); // Location of term start
 
-      if( thunking ) {          // Start thunking
-        throw com.cliffc.aa.AA.unimpl();
-      } else
-        term = require_term(ex);
-      ex._term=term.keep();
+      // Wrap every term in a thunk
+      ThunkNode thunk = (ThunkNode)gvn(new ThunkNode(old_mem));
+      set_ctrl(gvn(new CProjNode(thunk,0)));
+      set_mem (gvn(new MProjNode(thunk,1)));
+      // Parse term into thunk
+      term = term();
+      if( term==null ) term = err_ctrl2("Missing term after '"+ex._fun._name+"'");
+      ex._term= gvn(new ThretNode(ctrl(),mem(),term,thunk)).<ThretNode>keep();
     }
+    // Back to the old control & memory before anything is emitted.
+    set_ctrl(old_ctrl.unhook());
+    set_mem (old_mem .unhook());
 
-    // Have a list of interspersed operators and terms.
+    // Have a list of interspersed operators and thunked terms.
     // Build a tree with precedence.
+    for( Expr ex : exs )
+      ex._root = new Expr(ex);
     while( exs._len > 1 ) {
       // Find max precedence index
       int idx=1;
       for( int i=2; i<exs._len; i++ )
-        if( exs.at(i)._op_prec > exs.at(idx)._op_prec )
+        if( exs.at(i)._fun._op_prec > exs.at(idx)._fun._op_prec )
           idx = i;
-      Expr lhs = exs.at(idx-1);
-      Expr rhs = exs.remove(idx);
-      assert !rhs._thunked || rhs._term instanceof FunPtrNode;
-      Node call = do_call(new Parse[]{rhs._op_loc     ,lhs._term_loc     ,rhs._term_loc     },
-                          args       (rhs._op.unhook(),lhs._term.unhook(),rhs._term.unhook()));
-      if( lhs._thunked )
-        throw com.cliffc.aa.AA.unimpl();
-      lhs._term = call.keep();
+        Expr lhs = exs.at(idx-1)  ;
+        Expr rhs = exs.remove(idx);
+        rhs._rhs = rhs._root;
+        rhs._lhs = lhs._root;
+        rhs._root = null;
+        lhs._root = rhs;
     }
-    return exs.pop()._term.unhook();
+    // Walk the expression tree & emit, de-thunking as needed
+    exs.at(0)._root.emit(this);
+    return exs.at(0)._root._term.unhook();
   }
 
-  private Node require_term(Expr ex) {
-    Node term = term();
-    return term==null ? err_ctrl2("Missing term after '"+ex._name+"'") : term;
-  }
+  /*
+
+        //while( exs._len > 1 ) {
+    //  // Find max precedence index
+    //  int idx=1;
+    //  for( int i=2; i<exs._len; i++ )
+    //    if( exs.at(i)._fun._op_prec > exs.at(idx)._fun._op_prec )
+    //      idx = i;
+    //  Expr lhs = exs.at(idx-1);
+    //  Expr rhs = exs.remove(idx);
+    //
+      //// Thunk the (term-binop-term), with un-thunking in the middle.
+      //ThunkNode thunk = init(new ThunkNode());
+      //Node ctrl = init(new CProjNode(thunk,0));
+      //Node mem  = init(new MProjNode(thunk,1));
+      //Node lhst = lhs._term;
+      //// All terms except the first are thunked.
+      //// Always the LHS needs to be unthunked.
+      //if( idx>1 ) {
+      //  Node lhs_thall = gvn.xform(new ThallNode(ctrl,mem,(ThretNode)lhst.unkeep()));
+      //  ctrl = init(new CProjNode(lhs_tall,0));
+      //  mem  = init(new MProjNode(lhs_tall,1));
+      //  lhst = init(new  ProjNode(2,lhs_tall));
+      //} else lhst = lhst.unkeep();
+      //// LHS is now unhooked and unthunked.
+      //// Most Ops RHS is de-thunked (e.g. +,*), but the short-circuit ops take
+      //// a thunk directly.
+      //ThretNode rhst = (ThretNode)rhs._term.unkeep();
+      //if( !rhs._fun._thunk_rhs ) { // De-thunk as-needed by RHS op
+      //  Node rhs_thall = gvn.xform(new ThallNode(ctrl,mem,rhst));
+      //  ctrl = init(new CProjNode(rhs_tall,0));
+      //  mem  = init(new MProjNode(rhs_tall,1));
+      //  rhst = init(new  ProjNode(2,rhs_tall));
+      //}
+      //// RHS is now unhooked.
+      //Parse[] bads = new Parse[]{rhs._op_loclhs._term_loc,rhs._term_loc};
+      //CallNode call = (CallNode)gvn(new CallNode(true,bads,ctrl,mem,rhs._op.unhook(),lhst,rhst));
+      //ctrl = init(new CProjNode(call,0));
+      //mem  = init(new MProjNode(call,1));
+      //lhst = init(new  ProjNode(2,call));
+      //// Result is returned from thunk
+      //ThretNode tret = init(new ThretNode(ctrl,mem,lhst));
+      //lhs._term = tret.keep();
+    //  throw com.cliffc.aa.AA.unimpl(); // De-thunk
+    //}
+    //Expr lhs = exs.pop();
+    //if( lhs._term instanceof ThunkNode )
+    //  throw com.cliffc.aa.AA.unimpl(); // De-thunk
+    //return lhs._term.unhook();
+    //throw com.cliffc.aa.AA.unimpl(); // De-thunk
+    */
+
 
   /** Any number field-lookups or function applications, then an optional assignment
    *    term = id++ | id--
@@ -1321,6 +1422,7 @@ public class Parse implements Comparable<Parse> {
     // Display is a linked list of displays, and we already checked that token
     // exists at scope up in the display.
     Env e = _e;
+
     Node ptr = e._scope.ptr();
     Node mmem = mem();
     while( true ) {

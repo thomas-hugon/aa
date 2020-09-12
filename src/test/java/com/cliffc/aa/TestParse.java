@@ -18,6 +18,8 @@ public class TestParse {
   @Test public void testParse() {
     TypeStruct dummy = TypeStruct.DISPLAY;
     TypeMemPtr tdisp = TypeMemPtr.make(BitsAlias.make0(2),TypeStr.NO_DISP);
+    test_ptr("tmp=@{val=2;nxt=@{val=1;nxt=0}}; noinline_map={tree -> tree ? @{vv=tree.val&tree.val;nn=noinline_map(tree.nxt)} : 0}; noinline_map(tmp)",
+      "@{vv=int8; noinline_map=~Scalar; nn=*$?}");
 
     // fails another way also
     //test("key = \"Monday\"; val = 1;\n" +
@@ -188,6 +190,9 @@ public class TestParse {
 
   @Ignore
   @Test public void testParse01a() {
+    test_obj("x:=y:=0; x++ && y++; z=x++ && y++; (x,y,z)", // x++; x++; y++; (2,1,1)
+      TypeStruct.make_tuple(Type.XNIL,TypeInt.con(2),TypeInt.con(1),TypeInt.con(1)));
+
     test("0 && 0", Type.XNIL);
     test("1 && 2", TypeInt.con(2));
     test("0 && 2", Type.XNIL);
@@ -195,7 +200,6 @@ public class TestParse {
              TypeStruct.make_tuple(Type.XNIL,TypeInt.con(1),Type.XNIL,Type.XNIL));
     test_obj("x:=y:=0; x++ && y++; z=x++ && y++; (x,y,z)", // x++; x++; y++; (2,1,1)
              TypeStruct.make_tuple(Type.XNIL,TypeInt.con(2),TypeInt.con(1),TypeInt.con(1)));
-
   }
 
   @Test public void testParse02() {

@@ -41,12 +41,14 @@ public abstract class Node implements Cloneable {
   static final byte OP_START  =27;
   static final byte OP_STMEM  =28;
   static final byte OP_STORE  =29;
-  static final byte OP_TMP    =30;
-  static final byte OP_TYPE   =31;
-  static final byte OP_UNR    =32;
-  static final byte OP_MAX    =33;
+  static final byte OP_THALL  =30;
+  static final byte OP_THRET  =31;
+  static final byte OP_THUNK  =32;
+  static final byte OP_TYPE   =33;
+  static final byte OP_UNR    =34;
+  static final byte OP_MAX    =35;
 
-  private static final String[] STRS = new String[] { null, "Call", "CallEpi", "Cast", "Con", "CProj", "DefMem", "Err", "FP2Clo", "Fun", "FunPtr", "If", "Join", "Load", "Loop", "Name", "NewObj", "NewAry", "NewStr", "Parm", "Phi", "Prim", "Proj", "Region", "Return", "Scope","Split", "Start", "StartMem", "Store", "Tmp", "Type", "Unresolved" };
+  private static final String[] STRS = new String[] { null, "Call", "CallEpi", "Cast", "Con", "CProj", "DefMem", "Err", "FP2Clo", "Fun", "FunPtr", "If", "Join", "Load", "Loop", "Name", "NewObj", "NewAry", "NewStr", "Parm", "Phi", "Prim", "Proj", "Region", "Return", "Scope","Split", "Start", "StartMem", "Store", "Thall", "Thret", "Thunk", "Type", "Unresolved" };
   static { assert STRS.length==OP_MAX; }
 
   public int _uid;      // Unique ID, will have gaps, used to give a dense numbering to nodes
@@ -272,7 +274,7 @@ public abstract class Node implements Cloneable {
       return dump(d,sb,plive).nl();
     }
   }
-  public boolean is_multi_head() { return _op==OP_CALL || _op==OP_CALLEPI || _op==OP_FUN || _op==OP_IF || _op==OP_LOOP || _op==OP_NEWOBJ || _op==OP_NEWSTR || _op==OP_REGION || _op==OP_SPLIT || _op==OP_START; }
+  public boolean is_multi_head() { return _op==OP_CALL || _op==OP_CALLEPI || _op==OP_FUN || _op==OP_IF || _op==OP_LOOP || _op==OP_NEWOBJ || _op==OP_NEWSTR || _op==OP_REGION || _op==OP_SPLIT || _op==OP_START || _op==OP_THUNK || _op==OP_THALL ||  _op==OP_THRET; }
   private boolean is_multi_tail() { return _op==OP_PARM || _op==OP_PHI || _op==OP_PROJ || _op==OP_CPROJ || _op==OP_FP2CLO; }
   boolean is_CFG() { return _op==OP_CALL || _op==OP_CALLEPI || _op==OP_FUN || _op==OP_RET || _op==OP_IF || _op==OP_LOOP || _op==OP_REGION || _op==OP_START || _op==OP_CPROJ || _op==OP_SCOPE; }
 

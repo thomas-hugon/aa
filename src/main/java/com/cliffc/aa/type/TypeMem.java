@@ -399,9 +399,10 @@ public class TypeMem extends Type<TypeMem> {
   // Widen (lose info), to make it suitable as the default memory.
   public TypeMem crush() {
     TypeObj[] oops = _pubs.clone();
+    oops[0] = null;
     for( int i=1; i<oops.length; i++ )
       if( oops[i]!=null ) oops[i] = oops[i].crush();
-    return TypeMem.make0(oops);
+    return make0(oops);
   }
 
   // Whole object Set at an alias.
