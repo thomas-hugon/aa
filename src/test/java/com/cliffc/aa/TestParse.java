@@ -16,7 +16,17 @@ public class TestParse {
   // temp/junk holder for "instant" junits, when debugged moved into other tests
   @Test public void testParse() {
     TypeStruct dummy = TypeStruct.DISPLAY;
-    TypeMemPtr tdisp = TypeMemPtr.make(BitsAlias.make0(2),TypeStr.NO_DISP);
+    TypeMemPtr tdisp = TypeMemPtr.make(BitsAlias.make0(2),TypeObj.ISUSED);
+    test_obj("\"Hello, world\"", TypeStr.con("Hello, world"));
+    // User-defined linked list.
+    String ll_def = "List=:@{next;val};";
+    String ll_con = "tmp=List(List(0,1.2),2.3);";
+    String ll_map = "map = {fun list -> list ? List(map(fun,list.next),fun(list.val)) : 0};";
+    String ll_fun = "sq = {x -> x*x};";
+    String ll_apl = "map(sq,tmp);";
+
+    // TODO: Needs a way to easily test simple recursive types
+    TypeEnv te4 = Exec.go(Env.file_scope(Env.top_scope()),"args",ll_def+ll_con+ll_map+ll_fun+ll_apl);
 
     // fails, oldval not defined on false arm of trinary
     //test("_tab = [7];\n" +
@@ -201,7 +211,7 @@ public class TestParse {
     // Since call not-taken, post GCP Parms not loaded from _tf, limited to ~Scalar.  The
     // hidden internal call from {&} to the primitive is never inlined (has ~Scalar args)
     // so 'x&1' never sees the TypeInt return from primitive AND.
-    TypeMemPtr tdisp = TypeMemPtr.make(BitsAlias.make0(12),TypeStr.NO_DISP);
+    TypeMemPtr tdisp = TypeMemPtr.make(BitsAlias.make0(12),TypeObj.ISUSED);
     test_isa("{x -> x&1}", TypeFunPtr.make(TEST_FUNBITS,2,tdisp)); // {Int -> Int}
 
     // Anonymous function definition

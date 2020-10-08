@@ -190,7 +190,7 @@ public class CallNode extends Node {
       for( int i=3; i<_defs._len; i++ )
         set_def(i,gvn.con(Type.ANY),gvn);
       gvn.add_work_defs(this);
-      return set_def(0,gvn.add_work(gvn.con(Type.XCTRL)),gvn);
+      return set_def(0,gvn.xctrl(_live),gvn);
     }
 
     // When do I do 'pattern matching'?  For the moment, right here: if not
@@ -330,7 +330,7 @@ public class CallNode extends Node {
 
     // If GCP declares unresolved, fall to the NO-OP function & be an error.
     if( _not_resolved_by_gcp ) return Type.ALL;
-    
+
     final Type[] ts = Types.get(_defs._len+1);
     ts[0] = Type.CTRL;
 
@@ -350,7 +350,7 @@ public class CallNode extends Node {
       tfx = tfx.oob(TypeFunPtr.GENERIC_FUNPTR);
     TypeFunPtr tfp = (TypeFunPtr)tfx;
     BitsFun fidxs = tfp.fidxs();
-    if( !fidxs.is_empty() && fidxs.above_center()!=tfp._disp.above_center() )
+    if( !fidxs.is_empty() && fidxs.above_center()!=tfp._disp.above_center() && !tfp._disp.is_con() )
       return _val; // Display and FIDX mis-aligned; stall
     // Resolve; only keep choices with sane arguments during GCP
     // Unpacked: to be monotonic, skip resolve until unpacked.
@@ -440,24 +440,25 @@ public class CallNode extends Node {
       return TypeMem.ESCAPE;    // Args always alive and escape
     }
 
-    // Needed to sharpen args for e.g. resolve and errors.
-    Type tcall = _val;
-    Type tcmem = mem()._val;
-    if( !(tcall instanceof TypeTuple) || !(tcmem instanceof TypeMem) ) return _live; // No type to sharpen
-    TypeMem caller_mem = (TypeMem)tcmem;
-    BitsAlias aliases = BitsAlias.EMPTY;
-    for( int i=1; i<nargs(); i++ ) {
-      Type targ = targ(tcall,i);
-      if( TypeMemPtr.OOP.isa(targ) )
-        { aliases=BitsAlias.FULL; break; } // All possible pointers, so all memory is alive
-      if( !(targ instanceof TypeMemPtr) ) continue; // Not a pointer, does not need memory to sharpen
-      if( targ.above_center() ) continue; // Have infinite choices still, no memory
-      aliases = aliases.meet(((TypeMemPtr)targ)._aliases);
-    }
-    // Conservative too strong; need only memories that go as deep as the
-    // formal types.
-    TypeMem tmem2 = caller_mem.slice_reaching_aliases(caller_mem.all_reaching_aliases(aliases));
-    return (TypeMem)tmem2.meet(_live);
+    //// Needed to sharpen args for e.g. resolve and errors.
+    //Type tcall = _val;
+    //Type tcmem = mem()._val;
+    //if( !(tcall instanceof TypeTuple) || !(tcmem instanceof TypeMem) ) return _live; // No type to sharpen
+    //TypeMem caller_mem = (TypeMem)tcmem;
+    //BitsAlias aliases = BitsAlias.EMPTY;
+    //for( int i=1; i<nargs(); i++ ) {
+    //  Type targ = targ(tcall,i);
+    //  if( TypeMemPtr.OOP.isa(targ) )
+    //    { aliases=BitsAlias.FULL; break; } // All possible pointers, so all memory is alive
+    //  if( !(targ instanceof TypeMemPtr) ) continue; // Not a pointer, does not need memory to sharpen
+    //  if( targ.above_center() ) continue; // Have infinite choices still, no memory
+    //  aliases = aliases.meet(((TypeMemPtr)targ)._aliases);
+    //}
+    //// Conservative too strong; need only memories that go as deep as the
+    //// formal types.
+    //TypeMem tmem2 = caller_mem.slice_reaching_aliases(caller_mem.all_reaching_aliases(aliases));
+    //return (TypeMem)tmem2.meet(_live);
+    return opt_mode._CG ? _live : TypeMem.ALLMEM;
   }
 
   TypeMem live_use_call( int dfidx ) {
@@ -538,7 +539,7 @@ public class CallNode extends Node {
       return choices;           // Report it low
     if( choices==BitsFun.EMPTY )// No good choices
       return sgn(fidxs,false);  // Report all the bad ones low
-    return sgn(choices,fidxs.above_center());
+    return sgn(choices,gcp);
   }
 
   private static boolean x(int flags, int flag)  { return (flags&flag)==flag; }
@@ -576,8 +577,9 @@ public class CallNode extends Node {
     int flags=0;
     for( int j=0; j<nargs(); j++ ) {
       Type formal = formals.at(j);
-      if( fun.parm(j)==null ) continue;     // Arg is ignored
-      Type actual = targ(targs,j);          // Calls skip ctrl & mem
+      ParmNode parm = fun.parm(j);
+      if( parm==null ) continue;   // Arg is ignored
+      Type actual = targ(targs,j); // Calls skip ctrl & mem
       if( j==0 && actual instanceof TypeFunPtr )
         actual = ((TypeFunPtr)actual)._disp; // Extract Display type from TFP
       assert actual==actual.simple_ptr();    // Only simple ptrs from nodes
@@ -586,10 +588,16 @@ public class CallNode extends Node {
       if( actual==formal ) { flags|=GOOD; continue; } // Arg is fine.  Covers NO_DISP which can be a high formal.
       Type mt_lo = actual.meet(formal       );
       Type mt_hi = actual.meet(formal.dual());
-      if( mt_lo==actual ) flags|=LOW;       // Low
+      if( mt_lo==actual ) {
+        if( parm._live==TypeMem.DEAD )
+          System.out.println("ignore dead LOW parm"); // While the parm is dead, we can ignore it
+        flags|=LOW;       // Low
+      }
       else if( mt_hi==actual && mt_lo==formal ) flags|=GOOD; // Good
       else if( mt_hi==formal.dual() ) flags|=HIGH;
       else if( mt_lo==formal ) flags|=GOOD; // handles some display cases with prims hi/lo inverted
+      //else if( actual.dual().meet(formal)!=Type.SCALAR )
+      //  flags|= LOW;
       else flags|=BAD;                      // Side-ways is bad
     }
     if( flags==0 ) flags=GOOD; // No args counts as all-good-args

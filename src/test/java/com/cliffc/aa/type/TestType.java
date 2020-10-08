@@ -17,14 +17,11 @@ public class TestType {
     Object dummy0 = TypeStruct.TYPES;
     Object dummy1 = TypeMemPtr.TYPES;
 
-    TypeStruct ts0 = TypeStruct.open(TypeMemPtr.DISPLAY_PTR); // infinite extent of any-field, top mod, Scalar
-    TypeStruct ts1 = ts0.add_fld("a",TypeStruct.FFNL); // adding a field lifts
-    TypeStruct ts2 = ts1.add_fld("b",TypeStruct.FFNL); // adding a field lifts
-    Type mt = ts1.meet(ts2);
-    assertEquals(ts1,mt);
+    Type t0 = TypeMemPtr.NILPTR;
+    Type t1 = Type.XNSCALR;
+    Type mt = t0.meet(t1);
 
-    TypeStruct ts3 = ts2.close();
-    assertTrue(ts3.isa(ts2));
+    //assertEquals(t0,mt);
   }
 
   @Test public void testBits0() {
@@ -290,7 +287,7 @@ public class TestType {
     TypeMem mem = TypeMem.make0(tos.asAry()); // [7:@{c==nil},8:{c=*[0,9]},9:@{x==1}]
     // *[1]? join *[2] ==> *[1+2]?
     // {~0+7+8} -> @{ c== [~0] -> @{x==1}} // Retain precision after nil
-    Type ptr12 = Type.NIL.join(TypeMemPtr.make(-alias1,a1)).join( TypeMemPtr.make(-alias2,a2));
+    Type ptr12 = Type.NIL.join(TypeMemPtr.make(-alias1,(TypeObj)a1.dual())).join( TypeMemPtr.make(-alias2,(TypeObj)a2.dual()));
     // mem.ld(*[1+2]?) ==> @{c:0}
     // Currently retaining precision after nil: [~0] -> @{ x==1}
     Type ld = mem.ld((TypeMemPtr)ptr12);

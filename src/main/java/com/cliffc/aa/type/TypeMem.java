@@ -303,7 +303,7 @@ public class TypeMem extends Type<TypeMem> {
     if( this==EMPTY ) return TypeObj.XOBJ;
     return ld(_pubs,ptr._aliases);
   }
-  static TypeObj ld( TypeObj[] tos, BitsAlias aliases ) {
+  private static TypeObj ld( TypeObj[] tos, BitsAlias aliases ) {
     boolean any = aliases.above_center();
     // Any alias, plus all of its children, are meet/joined.  This does a
     // tree-based scan on the inner loop.
@@ -316,6 +316,18 @@ public class TypeMem extends Type<TypeMem> {
     return obj1;
   }
 
+
+  // Theory: filter values by live will stop the problem in test8, where
+  // stale closed-cycles exist after GCP 1 (plus one round of inlining).
+  // NewNode dies pre-closed-cycle, but remains live in cycle (and unused).
+
+  // Theory: back to all-reaching and slice-reaching as 1 call, for live-mem
+  // only.  All fields alive.  Assumption is this is used by ScopeNode only,
+  // and Scope might read any part of reachable memory.
+
+  // Theory: if alias arrives here, it is ISUSED in the live, even if the live
+  // mem is UNUSED.
+  
   // Transitively walk all reachable aliases from this set of aliases, and
   // return the complete set.
   public BitsAlias all_reaching_aliases(BitsAlias aliases) {
@@ -361,15 +373,12 @@ public class TypeMem extends Type<TypeMem> {
   }
 
   // Slice memory by aliases; unnamed aliases are replaced with ~use.
-  public TypeMem slice_reaching_aliases(BitsAlias aliases) { return slice_reaching_aliases(aliases,at(1),TypeObj.UNUSED); }
-  public TypeMem slice_reaching_aliases(BitsAlias aliases, TypeObj base, TypeObj unuse) {
+  public TypeMem slice_reaching_aliases(BitsAlias aliases) {
     if( aliases==BitsAlias.FULL ) return this;
     TypeObj[] tos = new TypeObj[Math.max(_pubs.length,aliases.max()+1)];
-    tos[1]=base;
-    for( int i=2; i<tos.length; i++ ) {
-      TypeObj to = at(i);
-      tos[i] = aliases.test_recur(i) || to==TypeObj.UNUSED ? to : unuse;
-    }
+    tos[1] = at(1);
+    for( int i=2; i<tos.length; i++ )
+      tos[i] = aliases.test_recur(i) ? TypeObj.ISUSED : TypeObj.UNUSED;
     return make0(tos);
   }
 
@@ -530,5 +539,8 @@ public class TypeMem extends Type<TypeMem> {
   public TypeLive live() { return (TypeLive)_pubs[0]; }
   public boolean is_live() { return live()!=TypeLive.DEAD; }
   public boolean basic_live() { return _pubs.length==1; }
+
+  // Lift memory types as high as what is live
+  @Override public Type lift_live(TypeMem live) { return live==DEAD ? ANYMEM : join(live); }
 
 }

@@ -46,6 +46,10 @@ import java.util.function.Predicate;
 // field name, or bottom.
 // Strings are OOPs which again can be top, a constant, or bottom.
 //
+// Because the meet is commutative, associative, distributive, the following holds:
+//
+//     (forall X, join X) === ~(forall X, meet ~X)
+//
 // ===========================================================================
 //
 // A Treatise on NIL
@@ -556,6 +560,9 @@ public class Type<T extends Type<T>> implements Cloneable {
     System.out.println("Meet not commutative: "+this+".meet("+t+")="+mt+",\n but "+t+".meet("+this+")="+nmt2);
     return false;
   }
+  // A & B = MT
+  // Expect: ~A & ~MT == ~A
+  // Expect: ~B & ~MT == ~B
   private boolean check_symmetric( Type t, Type mt ) {
     if( t==this ) return true;
     Type ta = mt._dual.meet(t._dual);
@@ -576,21 +583,18 @@ public class Type<T extends Type<T>> implements Cloneable {
   public boolean above( Type t ) { return t != this && meet(t)==t; }
 
 
-  // Trim 'this' to being within lower bound 't' and upper bound 't.dual'.
-  // This is recursively deep.
-  public Type bound( Type t ) {
-    if( this==t || this==t.dual() ) return this; // Shortcut for being at the bounds already
-    if( t.dual().isa(this) && this.isa(t) ) return this;
-    return bound_impl(t);
-  }
-  // Compute recursively deep bounds, knowing OOB already.
-  public Type bound_impl(Type t) { return oob(t); }
+  // Compute recursively deep OOB, knowing OOB already.
+  public Type deep_oob(Type t) { return oob(); }
+
   public Type       oob( ) { return oob(ALL); }
   public Type       oob(Type       e) { return above_center() ? e.dual() : e; }
   public TypeObj    oob(TypeObj    e) { return above_center() ? (TypeObj)e.dual() : e; }
   public TypeStruct oob(TypeStruct e) { return above_center() ? e.dual() : e; }
   public TypeMem    oob(TypeMem    e) { return above_center() ? e.dual() : e; }
   public TypeMemPtr oob(TypeMemPtr e) { return above_center() ? e.dual() : e; }
+
+  // Lift memory types as high as what is live
+  public Type lift_live(TypeMem live) { return this; }
 
   public static void init0( HashMap<String,Type> types ) {
     types.put("real",REAL);

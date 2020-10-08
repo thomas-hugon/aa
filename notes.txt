@@ -1,4 +1,91 @@
 =======================================
+Notes from 09/23/2020
+
+Pondering classes... my simple HashTable example shows that Strings do not have a hash() right now.
+
+Plan A- classes do not really exist, a v-table is just an optimization, and its
+all Duck Typing.  The impl "under the hood" groups together final-constant
+fields (e.g. typically functions) and jams them into a v-table.  Still need an
+inheritence mechanism.  Also, little control over the object layout, since its
+up to the impl to jam things into the v-table or not.
+
+Plan B- v-table is explicit, and (more or less) directly settable by user.
+Actual impl can choose how the data is represented in the v-table, but not what
+goes into it.  Still need to think about explicit sharing.
+
+Plan C- allow user-controlled direct object inlining.  Inlining an object
+immediately exposes its fields and allows subclass behavior by simple
+inlining a base-class instance as the first field.
+Ex: pt2=@{x,y};  pt3=@{..=pt2,z,more fields} // NO: implies a pointer (sharable) 'pt2', not an inlined pt2.
+Ex: Sub-classing via named types only, must be declared.
+
+
+Point2 = :@{
+  x;y;
+  // Since a type, we would normally describe fields & infer types.
+  dist;                   // type is inferred
+  // NO.  Cannot declare a final field in a type-decl, unless I give the constant value.
+  dist = ;                // type is a final field, inferred
+  // YES
+  dist = 3;
+  // ALSO NOTICE the return is 'Scalar' and not 'the type of x & y, one of int64 or flt64'.
+  dist : { Point2 -> }    // type is a function of a Point2 to Scalar, but field exists & can be repeatably set.
+  // OPTION: upon using '=', we expect a type, which will be finally assigned to a real field.
+  // NO - put the type on the field before the assignment.
+  dist = { p:Point2 -> }  // type is a final field, set to a constant fcn Point2 to Scalar, and can be in vtable.  It's not described here.
+  // OPTION: upon using '=', we switch to normal-parse, but demand a constant
+  // result and at the end of some normal parse, we flip back to type-parse.
+  // The final constant ends up in the v-table.
+  // YES!  Flip to normal-parse after '='
+  dist = { p:Point2 ->
+    math.sqrt((dx=x-p.x)*dx + (dy=y-p.y)*dy)
+  }
+};
+
+// Defines a type Point3 as a sub-type of Point2.
+Point3 = Point2:@{
+ z;                       // extra field in subtype
+ dist = { p:Point3 ->     // override dist field (buggy disallowed by e.g. Java right now)
+   math.sqrt((dx=x-p.x)*dx + (dy=y-p.y)*dy + (dz=z-p.z)*dz)
+ }
+};
+
+// Defines an *anonymous* type for a field 'ptr', which is a subtype of Point2,
+// extended with field 'z'
+ptr:Point2:@{z;} = ...;
+
+
+PLAN D: Named types ARE A NORMAL VARIABLE with special "vtable" behavior.  Basically  a 'clazz'.
+"Point2" - right now a standard overloaded function pointer (one taking (x,y), one taking @{x,y}).
+Add to it, object-like behavior for fields.  E.g. "Point2.dist" returns me the distance code?  Or "Point2().dist"?
+
+--------- Rollup thinking
+
+Named parse types produce a local var def'd to overloaded basic constructors.
+Inside the type-def, can set final fields.
+These must be constants (which includes functions) and they move into the var's value somehow.
+Setting a final field inside a type-def flips to normal expression parsing.
+The result must be a constant at parse-time, after standard iter().
+This is ALSO the 'clazz' (somehow).
+Instance objects with this type have the v-table somewhere, which is used to do the lookup.
+No "^" display in @{} after parse, the super-class lookup needs to be flattened somehow.
+Need an updated operational execution model!
+
+Right now parser expects "^" inside of @{} to do scope work.
+IS THIS NEEDED?  I'D LIKE TO REPLACE "^" with the clazz.
+Function parser emits display-chaining code, this IS needed.
+
+DID NOT think about object-inlining as a general way to do inheritance, or as a
+generally useful thing.  Generalized O-I is more about layout & overheads.
+Can do it same as current Named v-table-set; if I can show object is locally
+private, can inline.  Can add user-type to demand it, which will fail if i
+cannot prove inlining.
+
+Action: verify i can drop "^" inside of @{} (so can re-purpose to Clazz).
+Action: look at switching in & out of type-parse after '=' & validating constant.
+
+
+=======================================
 Notes from 09/07/2020
 
 Short-circuit evals.

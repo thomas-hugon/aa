@@ -270,7 +270,7 @@ public class TestNodeSmall {
     TypeFunPtr tint1 = v(aint,gvn), tint1X = tint1.dual();
     TypeFunPtr tstr1 = v(astr,gvn), tstr1X = tstr1.dual();
 
-    TypeFunPtr tmul1E = TypeFunPtr.make(BitsFun.EMPTY,1,TypeFunPtr.NO_DISP); // All bad choices
+    TypeFunPtr tmul1E = TypeFunPtr.make(BitsFun.EMPTY,0,TypeFunPtr.NO_DISP); // All bad choices
 
     assert tadd1X.isa(tnum1X) && tnum1X.isa(tflt1X) && tflt1X.isa(tnum1) && tnum1.isa(tadd1);
 
@@ -524,16 +524,17 @@ public class TestNodeSmall {
       TypeInt.INT64,
       TypeInt.INT64.dual(),
       TypeInt.NINT64,
-      TypeMemPtr.ABCPTR,
-      TypeMemPtr.ABCPTR.dual(),
-      TypeMemPtr.make(a1,TypeObj.OBJ),
-      TypeMemPtr.make(a1,TypeObj.OBJ).dual(),
+      TypeMemPtr.ABCPTR.simple_ptr(),
+      TypeMemPtr.ABCPTR.dual().simple_ptr(),
+      TypeMemPtr.make(a1,TypeObj.OBJ).simple_ptr(),
+      TypeMemPtr.make(a1,TypeObj.OBJ).dual().simple_ptr(),
     };
 
     // One-off jig for testing single combo
-    Type[] rez1 = check(gvn,sigs[2],mems[1],args[0],args[6]);
-    Type[] rez2 = check(gvn,sigs[2],mems[1],args[0],args[7]);
-    assertTrue(rez1[2].isa(rez2[2]));
+    Type[] rez1 = check(gvn,sigs[1],mems[0],args[0],args[8]);
+    Type[] rez2 = check(gvn,sigs[1],mems[0],args[0],args[5]);
+    for( int k=0; k<rez1.length; k++ )
+      assertTrue(rez1[k].isa(rez2[k]));
 
 
     // Call for all combos.
@@ -595,12 +596,12 @@ public class TestNodeSmall {
     // Check the isa(sig) on complex pointer args
     Type actual1 = tpm.sharptr(tp1);
     Type formal1 = fun.formal(1);
-    if( !actual1.isa(formal1) && !formal1.isa(actual1) )
-      perror("arg1-vs-formal1",actual1,formal1);
+    //if( tp1!=Type.ALL && !tp1.isa(formal1.simple_ptr()) )
+    //  perror("arg1-vs-formal1",tp1,formal1.simple_ptr());
     Type actual2 = tpm.sharptr(tp2);
     Type formal2 = fun.formal(2);
-    if( !actual2.isa(formal2) && !formal2.isa(actual2) )
-      perror("arg2-vs-formal2",actual2,formal2);
+    //if( tp2!=Type.ALL && !tp2.isa(formal2.simple_ptr()) )
+    //  perror("arg2-vs-formal2",tp2,formal2.simple_ptr());
 
     // Record for later monotonic check
     return new Type[]{tpm,tp1,tp2};

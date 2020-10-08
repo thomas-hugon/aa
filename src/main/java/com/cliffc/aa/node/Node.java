@@ -465,15 +465,16 @@ public abstract class Node implements Cloneable {
   public final boolean more_ideal(GVNGCM gvn, VBitSet bs, int level) {
     if( bs.tset(_uid) ) return false; // Been there, done that
     if( _keep == 0 && _live.is_live() ) { // Only non-keeps, which is just top-level scope and prims
-      Node idl = ideal(gvn,level);
+      Node idl = is_prim() ? null : ideal(gvn,level);
       if( idl != null )
         return true;            // Found an ideal call
-      Type t = value(gvn._opt_mode);
-      if( _val != t )
-        return true;            // Found a value improvement
       TypeMem live = live(gvn._opt_mode);
       if( _live != live )
         return true;            // Found a liveness improvement
+      Type v = value(gvn._opt_mode);
+      Type t = v.lift_live(live);
+      if( _val != t )
+        return true;            // Found a value improvement
     }
     for( Node def : _defs ) if( def != null && def.more_ideal(gvn,bs,level) ) return true;
     for( Node use : _uses ) if( use != null && use.more_ideal(gvn,bs,level) ) return true;
@@ -483,8 +484,9 @@ public abstract class Node implements Cloneable {
   public final int more_flow(GVNGCM gvn, VBitSet bs, boolean lifting, int errs) {
     if( bs.tset(_uid) ) return errs; // Been there, done that
     // Check for only forwards flow, and if possible then also on worklist
-    Type    oval=_val , nval = value(gvn._opt_mode);
     TypeMem oliv=_live, nliv = live (gvn._opt_mode);
+    Type    oval=_val ,  val = value(gvn._opt_mode);
+    Type    nval = val.lift_live(nliv);
     if( nval != oval || nliv != oliv ) {
       boolean ok = lifting
         ? nval.isa(oval) && nliv.isa(oliv)

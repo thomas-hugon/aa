@@ -112,6 +112,19 @@ public class GVNGCM {
     add_work(con);
     return con;
   }
+  public @NotNull ConNode xctrl(TypeMem live) {
+    ConNode con = new ConNode<>(Type.XCTRL);
+    Node con2 = _vals.putIfAbsent(con,con);
+    if( con2!=null ) {
+      kill0(con);
+      con = (ConNode)con2;
+      live = (TypeMem)con._live.meet(live);
+      if( live != con._live ) add_work(con);
+    }
+    con._val = Type.XCTRL;
+    con._live = live;
+    return con;
+  }
 
   // Record a Node, but do not optimize it for value and ideal calls, as it is
   // mid-construction from the parser.  Any function call with yet-to-be-parsed
@@ -415,11 +428,12 @@ public class GVNGCM {
       { n._val = null; return con(Type.ANY); } // Replace non-constants with high (dead) constants
 
     // [ts!] Compute best type, and type is IN ts
-    Type nval = n.value(_opt_mode); // Get best type
+    Type val = n.value(_opt_mode); // Get best type
+    Type nval = val.lift_live(nliv); // Lift memory as high as live: trim computation of dead memory
 
     // [ts!] Put updated types into table for use by ideal()
     if( nval!=oval ) {
-      assert nval.isa(oval);       // Monotonically improving
+      assert nval.isa(oval);   // Monotonically improving
       n._val = nval;
     }
     // [ts!] Replace with a constant, if possible.  This is also very cheap
@@ -582,9 +596,27 @@ public class GVNGCM {
         _wrk_bits.clear(n._uid);
         if( n.is_dead() ) continue; // Can be dead functions after removing ambiguous calls
 
+
+        // Reverse flow
+        TypeMem oliv = n._live;
+        TypeMem nliv = n.live(_opt_mode);
+        if( oliv != nliv ) {      // Liveness progress
+          assert oliv.isa(nliv);  // Monotonically improving
+          n._live = nliv;
+          add_work_defs(n);    // Put defs on worklist... liveness flows uphill
+          if( n.live_changes_value() )
+            add_work(n);
+          if( n instanceof  ProjNode && n.in(0) instanceof CallNode )
+            add_work_defs(n.in(0)); // Args are alive, if Call Projs are alive
+          if( n instanceof CProjNode && n.in(0) instanceof CallEpiNode )
+            add_work(((CallEpiNode)n.in(0)).call());
+        }
+
         // Forwards flow
         Type ot = n._val;                              // Old type
-        Type nt = n.value(_opt_mode);                  // New type
+        Type val= n.value(_opt_mode);                  // New type
+        Type nt = val.lift_live(nliv);
+
         if( ot != nt ) {                               // Progress
           if( !check_monotonicity(n,ot,nt) ) continue; // Debugging hook
           n._val = nt;           // Record progress
@@ -625,20 +657,6 @@ public class GVNGCM {
             if( use instanceof CallEpiNode ) check_and_wire((CallEpiNode)use);
         }
 
-        // Reverse flow
-        TypeMem old = n._live;
-        TypeMem nnn = n.live(_opt_mode);
-        if( old != nnn ) {      // Liveness progress
-          assert old.isa(nnn);  // Monotonically improving
-          n._live = nnn;
-          add_work_defs(n);    // Put defs on worklist... liveness flows uphill
-          if( n.live_changes_value() )
-            add_work(n);
-          if( n instanceof  ProjNode && n.in(0) instanceof CallNode )
-            add_work_defs(n.in(0)); // Args are alive, if Call Projs are alive
-          if( n instanceof CProjNode && n.in(0) instanceof CallEpiNode )
-            add_work(((CallEpiNode)n.in(0)).call());
-        }
         // See if we can resolve an unresolved
         if( n instanceof CallNode && n._live != TypeMem.DEAD ) {
           CallNode call = (CallNode)n;
@@ -703,7 +721,7 @@ public class GVNGCM {
     add_work(fptr.in(0));
     assert Env.START.more_flow(this,new VBitSet(),false,0)==0; // Post conditions are correct
   }
-  
+
   private void check_and_wire( CallEpiNode cepi ) {
     if( !cepi.check_and_wire(this) ) return;
     add_work(cepi.call().fun());
@@ -740,8 +758,8 @@ public class GVNGCM {
     if( n==Env.START ) return;          // Top-level scope
 
     // Hit the fixed point, despite any immediate updates.
-    assert n.value(_opt_mode)==n._val;
     assert n.live (_opt_mode)==n._live;
+    assert n.value(_opt_mode).lift_live(n._live)==n._val;
 
     // Walk reachable graph
     add_work(n);                        // Only walk once
